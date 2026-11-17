@@ -153,8 +153,37 @@ const BG = {
   storm: ["#3A3F5C", "#6A708F"], snow: ["#9BB8D6", "#EAF3FB"], fog: ["#A8B0B8", "#D8DDE1"]
 };
 
+// Lock Screen widgets (iOS 16+): small, single colour, so text + emoji instead of the drawn cat.
+function lockScreen(wd, w, family) {
+  const u = getUnit(), k = kind(w.code);
+  const icon = { storm: "⛈", snow: "❄️", rain: "🌧", fog: "🌫", cloud: "☁️", clear: w.day ? "☀️" : "🌙" }[k];
+  const t = toUnit(w.tempC, u) + "°";
+  const add = (s, size, bold) => {
+    const x = wd.addText(s);
+    x.font = bold ? Font.boldRoundedSystemFont(size) : Font.mediumRoundedSystemFont(size);
+    x.lineLimit = 1; x.minimumScaleFactor = 0.6;
+    return x;
+  };
+  if (family === "accessoryInline") {
+    add("🐱 " + t + u + " " + LABEL[k], 14, false);
+  } else if (family === "accessoryCircular") {
+    wd.addAccessoryWidgetBackground = true;
+    const a = add(icon, 16, false); a.centerAlignText();
+    const b = add(t, 20, true); b.centerAlignText();
+  } else {
+    add("🐱 " + t + u + " " + icon, 17, true);
+    add(LABEL[k], 13, false);
+    add(w.city, 12, false);
+  }
+  wd.url = URLScheme.forRunningScript();
+  wd.refreshAfterDate = new Date(Date.now() + 20 * 60 * 1000);
+  return wd;
+}
+
 async function build(w) {
   const wd = new ListWidget();
+  const fam = config.widgetFamily || "";
+  if (w && fam.startsWith("accessory")) return lockScreen(wd, w, fam);
   if (!w) {
     wd.backgroundColor = col("#8FA3B8");
     const t = wd.addText("Cat can't find you. Allow location for Scriptable.");
