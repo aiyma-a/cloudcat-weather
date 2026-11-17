@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cloud Cat Weather</title>
+<meta name="description" content="A cat dressed for today's weather. Free, no sign-up. Add it to your iPhone Home Screen.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Cloud Cat">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<style>
+  :root{--c1:#5BB8F5;--c2:#B6E3FF;--ink:#1d2a3a}
+  *{box-sizing:border-box}
+  body{margin:0;font:17px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#f4f7fb}
+  .hero{background:linear-gradient(135deg,var(--c1),var(--c2));color:#fff;text-align:center;padding:28px 16px 24px;transition:background .6s}
+  .hero.night{color:#fff}
+  canvas{width:min(70vw,280px);height:auto;aspect-ratio:1}
+  .temp{font-size:56px;font-weight:800;line-height:1;text-shadow:0 2px 6px rgba(0,0,0,.25)}
+  .meta{font-size:20px;text-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .toggle{display:inline-flex;margin-top:14px;background:rgba(255,255,255,.3);border-radius:999px;padding:3px}
+  .toggle button{border:0;background:transparent;color:#1d2a3a;font-weight:600;font-size:16px;font-family:inherit;padding:8px 22px;border-radius:999px;cursor:pointer}
+  .toggle button.on{background:#fff;color:#1d2a3a}
+  .btn{display:inline-block;border:0;background:#fff;color:#1d2a3a;font-weight:600;font-size:16px;font-family:inherit;padding:10px 20px;border-radius:12px;cursor:pointer;margin-top:12px}
+  .msg{padding:10px 16px}
+  main{max-width:640px;margin:0 auto;padding:8px 18px 60px}
+  .card{background:#fff;border-radius:18px;padding:20px;margin:18px 0;box-shadow:0 2px 10px rgba(20,40,80,.07)}
+  h2{margin:0 0 8px;font-size:22px}
+  ol{padding-left:22px;margin:10px 0}
+  li{margin:10px 0}
+  .go{display:block;width:100%;border:0;background:#2f7de1;color:#fff;font-weight:700;font-size:18px;font-family:inherit;padding:16px;border-radius:14px;cursor:pointer;margin:12px 0}
+  .go.done{background:#2aa55a}
+  a{color:#2f7de1}
+  .note{font-size:14px;color:#5b6b7e}
+  textarea{width:100%;height:90px;font:12px monospace;display:none}
+  input.city{font-size:16px;font-family:inherit;padding:10px 12px;border-radius:10px;border:0;width:min(240px,60vw)}
+</style>
+</head>
+<body>
+<div class="hero" id="hero">
+  <canvas id="cat" width="300" height="300"></canvas>
+  <div class="temp" id="temp">--°</div>
+  <div class="meta" id="meta">Asking where you are…</div>
+  <div class="toggle"><button id="uC" class="on">°C</button><button id="uF">°F</button></div>
+  <div class="msg" id="msg"></div>
+</div>
+<main>
+  <div class="card">
+    <h2>Keep it on your phone</h2>
+    <p><b>iPhone:</b> tap the Share button (square with an arrow) in Safari, then <b>Add to Home Screen</b>. One tap opens it any time.</p>
+    <p><b>Android:</b> open the browser menu (⋮), then <b>Add to Home screen</b>.</p>
+  </div>
+
+  <div class="card" id="widget">
+    <h2>Want it as a real iPhone widget?</h2>
+    <p>The cat shows right on your Home Screen, with no tapping. It uses <b>Scriptable</b>, a free app. It takes about 3 minutes.</p>
+    <button class="go" id="copy">1. Copy the widget code</button>
+    <textarea id="fallback" readonly></textarea>
+    <ol>
+      <li>Install <b>Scriptable</b> from the App Store (free). <a href="https://apps.apple.com/app/scriptable/id1405459188" target="_blank" rel="noopener">Open in App Store</a></li>
+      <li>Tap the blue button above to copy the code.</li>
+      <li>Open Scriptable. Tap <b>+</b> (top right). Touch and hold the empty page, tap <b>Paste</b>. Tap the title at the top and name it <b>Cloud Cat</b>.</li>
+      <li>Tap the <b>▶ play</b> button. Allow location (<b>Allow While Using App</b>). You should see the cat.</li>
+      <li>Close it. On your Home Screen, touch and hold an empty spot, tap <b>+</b>, pick <b>Scriptable</b>, then <b>Add Widget</b>.</li>
+      <li>Touch and hold the new widget, tap <b>Edit Widget</b>, set <b>Script</b> to <b>Cloud Cat</b> and <b>When Interacting</b> to <b>Run Script</b>.</li>
+    </ol>
+    <p class="note">Tap the widget to switch °C / °F. It refreshes about every 20 minutes (iPhone decides the exact timing). Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>. Your location stays on your phone.</p>
+  </div>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let state=null, unit=localStorage.getItem('cc_unit')||'C';
+
+// ---------- weather ----------
+function kind(c){if(c>=95)return'storm';if([71,73,75,77,85,86].includes(c))return'snow';
+  if((c>=51&&c<=67)||(c>=80&&c<=82))return'rain';if(c===45||c===48)return'fog';if(c<=1)return'clear';return'cloud';}
+const LABEL={storm:'Stormy',snow:'Snowy',rain:'Rainy',fog:'Foggy',clear:'Clear',cloud:'Cloudy'};
+const BG={clear:['#5BB8F5','#B6E3FF'],cloud:['#8FA3B8','#C9D4DF'],rain:['#52657A','#8AA0B5'],storm:['#3A3F5C','#6A708F'],snow:['#9BB8D6','#7FA6CC'],fog:['#A8B0B8','#8E99A3']};
+const conv=c=>Math.round(unit==='F'?c*9/5+32:c);
+
+async function load(lat,lon,city){
+  const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,is_day&timezone=auto`);
+  const j=await r.json();
+  if(!city){try{const g=await (await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`)).json();city=g.city||g.locality||g.principalSubdivision||'Here';}catch(e){city='Here';}}
+  state={tempC:j.current.temperature_2m,code:j.current.weather_code,day:j.current.is_day===1,city};
+  $('msg').innerHTML='';render();
+}
+function render(){
+  if(!state)return;
+  const k=kind(state.code);
+  let [a,b]=BG[k]; if(!state.day){a='#1F2A44';b='#3A4A70';}
+  $('hero').style.setProperty('--c1',a);$('hero').style.setProperty('--c2',b);
+  $('temp').textContent=conv(state.tempC)+'°'+unit;
+  $('meta').textContent=LABEL[k]+' · '+state.city;
+  drawCat(state);
+}
+function askLocation(){
+  if(!navigator.geolocation){return manual();}
+  navigator.geolocation.getCurrentPosition(p=>load(p.coords.latitude,p.coords.longitude).catch(manual),()=>manual(),{timeout:10000,maximumAge:600000});
+}
+function manual(msg){
+  $('meta').textContent='Where are you?';
+  $('msg').innerHTML=`<div>${msg||'Location is off. Type your city instead:'}</div><input class="city" id="city" placeholder="e.g. Bishkek"> <button class="btn" id="find" style="margin-top:0">Show my cat</button> <button class="btn" id="retry" style="margin-top:0">Use my location</button>`;
+  $('find').onclick=async()=>{
+    const q=$('city').value.trim();if(!q)return;
+    try{const g=await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1`)).json();
+      if(!g.results)return manual("Couldn't find that city. Try another:");
+      const c=g.results[0];await load(c.latitude,c.longitude,c.name);}catch(e){manual("Something went wrong. Try again:");}
+  };
+  $('retry').onclick=askLocation;
+}
+$('uC').onclick=()=>setUnit('C');$('uF').onclick=()=>setUnit('F');
+function setUnit(u){unit=u;localStorage.setItem('cc_unit',u);$('uC').classList.toggle('on',u==='C');$('uF').classList.toggle('on',u==='F');render();}
+setUnit(unit);
+
+// ---------- cat ----------
+function drawCat(w){
+  const cv=$('cat'),x=cv.getContext('2d');x.clearRect(0,0,300,300);
+  const k=kind(w.code),cold=w.tempC<=5,hot=w.tempC>=28,night=!w.day;
+  const fur='#F4A950',light='#FFF1DC';
+  const ell=(a,b,c,d,f)=>{x.fillStyle=f;x.beginPath();x.ellipse(a+c/2,b+d/2,c/2,d/2,0,0,7);x.fill();};
+  const tri=(p,q,r,f)=>{x.fillStyle=f;x.beginPath();x.moveTo(...p);x.lineTo(...q);x.lineTo(...r);x.closePath();x.fill();};
+  const rect=(a,b,c,d,f)=>{x.fillStyle=f;x.fillRect(a,b,c,d);};
+  ell(195,180,80,28,fur);ell(85,160,130,120,fur);ell(120,200,60,70,light);
+  if(k==='rain'||k==='storm'){ell(80,165,140,115,'#F2D13B');ell(143,215,14,14,'#8A6D00');ell(143,245,14,14,'#8A6D00');}
+  ell(100,262,40,26,light);ell(160,262,40,26,light);
+  tri([82,100],[95,30],[140,78],fur);tri([218,100],[205,30],[160,78],fur);
+  tri([97,85],[102,52],[124,76],'#F7B6B6');tri([203,85],[198,52],[176,76],'#F7B6B6');
+  ell(70,60,160,135,fur);ell(100,140,100,50,light);
+  if(night||k==='fog'){x.strokeStyle='#3B2A12';x.lineWidth=5;for(const e of[112,172]){x.beginPath();x.moveTo(e,118);x.quadraticCurveTo(e+13,134,e+26,118);x.stroke();}}
+  else if(!(hot&&k==='clear')){ell(112,102,26,32,'#3B2A12');ell(172,102,26,32,'#3B2A12');ell(120,108,9,9,'#fff');ell(180,108,9,9,'#fff');}
+  tri([141,143],[159,143],[150,155],'#E27C7C');
+  x.strokeStyle='#3B2A12';x.lineWidth=3;x.beginPath();x.moveTo(150,155);x.quadraticCurveTo(144,174,128,163);x.moveTo(150,155);x.quadraticCurveTo(156,174,172,163);x.stroke();
+  for(const dy of[-6,6]){x.beginPath();x.moveTo(112,152);x.lineTo(62,152+dy*2);x.moveTo(188,152);x.lineTo(238,152+dy*2);x.stroke();}
+  if(hot&&k==='clear'&&!night){ell(100,98,48,38,'#1C1C1C');ell(162,98,48,38,'#1C1C1C');rect(146,110,18,5,'#1C1C1C');}
+  if(cold||k==='snow'){rect(95,182,110,24,'#D94F4F');rect(170,200,26,52,'#D94F4F');rect(170,238,26,6,'#B53A3A');}
+  if(k==='snow'){x.fillStyle='#4F7FD9';x.beginPath();x.moveTo(84,92);x.quadraticCurveTo(150,10,216,92);x.closePath();x.fill();rect(84,86,132,16,'#4F7FD9');ell(138,16,24,24,'#fff');}
+  if(k==='rain'||k==='storm'){x.fillStyle=k==='storm'?'#5A4FCF':'#E2506B';x.beginPath();x.moveTo(20,62);x.quadraticCurveTo(150,-40,280,62);x.closePath();x.fill();rect(148,56,4,40,'#6B6B6B');}
+  if(night){ell(235,20,40,40,'#FFF3B0');ell(247,14,38,38,'#2A3555');}
+}
+drawCat({tempC:20,code:0,day:true});
+askLocation();
+
+// ---------- copy widget code ----------
+$('copy').onclick=async()=>{
+  const b=$('copy');
+  try{
+    const t=await (await fetch('cloudcat.js')).text();
+    try{await navigator.clipboard.writeText(t);b.textContent='✓ Copied! Now open Scriptable (step 3)';b.classList.add('done');}
+    catch(e){const f=$('fallback');f.style.display='block';f.value=t;f.focus();f.select();b.textContent='Tap the box below, Select All, Copy';}
+  }catch(e){b.textContent="Couldn't load the code. Check your connection.";}
+};
+</script>
+</body>
+</html>
