@@ -150,7 +150,7 @@ function drawCat(w) {
 // ---------- widget ----------
 const BG = {
   clear: ["#5BB8F5", "#B6E3FF"], cloud: ["#8FA3B8", "#C9D4DF"], rain: ["#52657A", "#8AA0B5"],
-  storm: ["#3A3F5C", "#6A708F"], snow: ["#9BB8D6", "#EAF3FB"], fog: ["#A8B0B8", "#D8DDE1"]
+  storm: ["#3A3F5C", "#6A708F"], snow: ["#7F9FC6", "#A9C1DE"], fog: ["#A8B0B8", "#D8DDE1"]
 };
 
 // Lock Screen widgets (iOS 16+): small, single colour, so text + emoji instead of the drawn cat.
@@ -180,6 +180,72 @@ function lockScreen(wd, w, family) {
   return wd;
 }
 
+// ---------- weather decorations (drawn behind the cat; iOS widgets cannot animate) ----------
+function hexRGB(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function mix(a, b, t) {
+  const x = hexRGB(a), y = hexRGB(b);
+  return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+function line(ctx, x1, y1, x2, y2) {
+  const p = new Path(); p.move(new Point(x1, y1)); p.addLine(new Point(x2, y2)); ctx.addPath(p); ctx.strokePath();
+}
+function backdrop(w, W, H) {
+  const k = kind(w.code);
+  let [c1, c2] = BG[k];
+  if (!w.day) { c1 = "#1F2A44"; c2 = "#3A4A70"; }
+  const ctx = new DrawContext();
+  ctx.size = new Size(W, H); ctx.opaque = true; ctx.respectScreenScale = true;
+  const N = 40;
+  for (let i = 0; i < N; i++) {
+    ctx.setFillColor(col(mix(c1, c2, i / (N - 1))));
+    ctx.fillRect(new Rect(0, (i * H) / N, W, H / N + 1));
+  }
+  const R = (a, b) => a + Math.random() * (b - a);
+  const white = (a) => new Color("#FFFFFF", a);
+  if (k === "snow") {
+    for (let i = 0; i < Math.round(W / 6); i++) {
+      const r = R(1.4, 3.6);
+      ctx.setFillColor(white(R(0.55, 0.95)));
+      ctx.fillEllipse(new Rect(R(0, W), R(0, H), r * 2, r * 2));
+    }
+  } else if (k === "rain" || k === "storm") {
+    ctx.setStrokeColor(new Color("#D6E6FF", 0.6)); ctx.setLineWidth(1.4);
+    for (let i = 0; i < Math.round(W / 5); i++) {
+      const x = R(0, W), y = R(-10, H), len = R(9, 16);
+      line(ctx, x, y, x - len * 0.25, y + len);
+    }
+    if (k === "storm") {
+      const p = new Path(); const bx = W * 0.82, by = 6;
+      p.move(new Point(bx, by)); p.addLine(new Point(bx - 9, by + 20)); p.addLine(new Point(bx - 2, by + 20));
+      p.addLine(new Point(bx - 8, by + 38)); p.addLine(new Point(bx + 9, by + 14)); p.addLine(new Point(bx + 2, by + 14));
+      p.closeSubpath(); ctx.addPath(p); ctx.setFillColor(col("#FFE14D")); ctx.fillPath();
+    }
+  } else if (k === "clear" && w.day) {
+    const cx = W * 0.86, cy = H * 0.14;
+    for (let i = 6; i >= 1; i--) { ctx.setFillColor(new Color("#FFF3B0", 0.07 * (7 - i))); ctx.fillEllipse(new Rect(cx - i * 13, cy - i * 13, i * 26, i * 26)); }
+    ctx.setStrokeColor(new Color("#FFF3B0", 0.7)); ctx.setLineWidth(2.2);
+    for (let i = 0; i < 10; i++) {
+      const ang = (i * Math.PI) / 5;
+      line(ctx, cx + Math.cos(ang) * 22, cy + Math.sin(ang) * 22, cx + Math.cos(ang) * 33, cy + Math.sin(ang) * 33);
+    }
+    ctx.setFillColor(col("#FFE066")); ctx.fillEllipse(new Rect(cx - 15, cy - 15, 30, 30));
+  } else if (!w.day) {
+    for (let i = 0; i < Math.round(W / 8); i++) {
+      const r = R(0.7, 1.9);
+      ctx.setFillColor(new Color("#FFFBE0", R(0.4, 1)));
+      ctx.fillEllipse(new Rect(R(0, W), R(0, H * 0.75), r * 2, r * 2));
+    }
+  } else if (k === "cloud" || k === "fog") {
+    ctx.setFillColor(white(k === "fog" ? 0.35 : 0.45));
+    for (const [x, y, s] of [[W * 0.04, H * 0.06, 1], [W * 0.62, H * 0.02, 0.8], [W * 0.06, H * 0.34, 0.6]]) {
+      ctx.fillEllipse(new Rect(x, y + 8 * s, 56 * s, 22 * s));
+      ctx.fillEllipse(new Rect(x + 12 * s, y, 34 * s, 28 * s));
+      ctx.fillEllipse(new Rect(x + 30 * s, y + 6 * s, 40 * s, 22 * s));
+    }
+  }
+  return ctx.getImage();
+}
+
 async function build(w) {
   const wd = new ListWidget();
   const fam = config.widgetFamily || "";
@@ -191,40 +257,42 @@ async function build(w) {
     return wd;
   }
   const u = getUnit(), k = kind(w.code);
-  let [c1, c2] = BG[k];
-  if (!w.day) { c1 = "#1F2A44"; c2 = "#3A4A70"; }
-  const g = new LinearGradient();
-  g.colors = [col(c1), col(c2)]; g.locations = [0, 1];
-  g.startPoint = new Point(0, 0); g.endPoint = new Point(1, 1);
-  wd.backgroundGradient = g;
-  wd.setPadding(10, 10, 10, 10);
+  const family = config.widgetFamily || (config.runsInWidget ? "small" : "medium");
+  const big = family === "medium" || family === "large";
+  wd.backgroundImage = backdrop(w, big ? 338 : 158, family === "large" ? 354 : 158);
   wd.url = URLScheme.forRunningScript();
 
-  const family = config.widgetFamily || (config.runsInWidget ? "small" : "medium");
   const cat = drawCat(w);
-  const text = (stack, s, size, bold) => {
+  const text = (stack, s, size, bold, alpha) => {
     const t = stack.addText(s);
     t.font = bold ? Font.boldRoundedSystemFont(size) : Font.mediumRoundedSystemFont(size);
-    t.textColor = Color.white(); t.shadowColor = new Color("#000000", 0.25); t.shadowRadius = 2;
+    t.textColor = new Color("#FFFFFF", alpha || 1);
+    t.shadowColor = new Color("#000000", 0.25); t.shadowRadius = 2;
     t.lineLimit = 1; t.minimumScaleFactor = 0.6;
     return t;
   };
+  const temp = toUnit(w.tempC, u) + "°" + u;
 
-  if (family === "medium" || family === "large") {
+  if (big) {
+    wd.setPadding(10, 10, 10, 10);
     const row = wd.addStack(); row.centerAlignContent();
     const im = row.addImage(cat); im.imageSize = new Size(110, 110);
     row.addSpacer(8);
     const col2 = row.addStack(); col2.layoutVertically();
-    text(col2, toUnit(w.tempC, u) + "°" + u, 40, true);
+    text(col2, temp, 40, true);
     text(col2, LABEL[k], 16, false);
     text(col2, w.city, 13, false);
   } else {
-    const im = wd.addImage(cat); im.imageSize = new Size(88, 88); im.centerAlignImage();
-    const row = wd.addStack(); row.centerAlignContent();
-    text(row, toUnit(w.tempC, u) + "°" + u, 24, true);
-    row.addSpacer(6);
-    const s = row.addStack(); s.layoutVertically();
-    text(s, LABEL[k], 11, false); text(s, w.city, 10, false);
+    // small: temperature on top, cat, city under the cat, then the condition
+    wd.setPadding(8, 8, 8, 8);
+    const top = wd.addStack(); top.addSpacer(); text(top, temp, 17, true); top.addSpacer();
+    wd.addSpacer(2);
+    const mid = wd.addStack(); mid.addSpacer();
+    const im = mid.addImage(cat); im.imageSize = new Size(82, 82);
+    mid.addSpacer();
+    wd.addSpacer(2);
+    const c1 = wd.addStack(); c1.addSpacer(); text(c1, w.city, 11, false, 0.9); c1.addSpacer();
+    const c2 = wd.addStack(); c2.addSpacer(); text(c2, LABEL[k], 14, true); c2.addSpacer();
   }
   wd.refreshAfterDate = new Date(Date.now() + 20 * 60 * 1000);
   return wd;
